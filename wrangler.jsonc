@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "walpurgisnacht",
+  "account_id": "d1b74546929d99a7d941d4b503a5e1b3",
+  "main": "server/worker.ts",
+  "compatibility_date": "2026-05-22",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "dax-place.com/walpurgisnacht",
+      "zone_id": "a7320073cdaa47595dbbd0d6e0db06ed"
+    },
+    {
+      "pattern": "dax-place.com/walpurgisnacht/*",
+      "zone_id": "a7320073cdaa47595dbbd0d6e0db06ed"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "LLM_PROVIDER": "deepseek"
+  },
+  "ratelimits": [
+    {
+      "name": "CHAT_RATE_LIMITER",
+      "namespace_id": "202609090731",
+      "simple": {
+        "limit": 12,
+        "period": 60
+      }
+    }
+  ]
+}

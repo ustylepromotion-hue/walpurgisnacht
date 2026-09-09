@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import ts from 'typescript';
+function load(file) {
+  const code = ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const exports = {};
+  new Function('require', 'exports', code)((name) => load(resolve(dirname(file), name + '.ts')), exports);
+  return exports;
+}
+const { chatApi } = load(resolve('server/chat-api.ts'));
+const env = { walpurgisnacht_KEY: 'fake-test-key', LLM_PROVIDER: 'deepseek' };
+const request = (data = { messages: [{ role: 'user', content: 'ほむらの気持ちを短く説明して' }] }, headers = {}) => new Request('https://dax-place.com/walpurgisnacht/api/chat', { method: 'POST', headers: { origin: 'https://dax-place.com', 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(data) });
+let count = 0;
+const mock = async (url, init) => {
+  count++;
+  assert.equal(url, 'https://api.deepseek.com/chat/completions');
+  assert.equal(init.headers.Authorization, 'Bearer fake-test-key');
+  const body = JSON.parse(init.body);
+  assert.equal(body.model, 'deepseek-v4-flash');
+  assert.deepEqual(body.thinking, { type: 'disabled' });
+  assert.match(body.messages[0].content, /不要な問い返し/);
+  assert.match(body.messages[0].content, /reference_notes/);
+  assert.match(body.messages[0].content, /wish-madoka-marguerite/);
+  assert.ok(body.messages[0].content.indexOf('<editorial_records>') > body.messages[0].content.indexOf('</reference_notes>'));
+  assert.equal(body.temperature, 0.2);
+  return Response.json({ choices: [{ message: { content: 'まどかを大切に思う気持ちが中心にある、という解釈です。', reasoning_content: 'private reasoning' }, finish_reason: 'stop' }] });
+};
+const success = await chatApi(request(), env, mock);
+assert.equal(success.status, 200);
+assert.equal(success.headers.get('cache-control'), 'no-store');
+const text = await success.text(); assert.ok(!text.includes('fake-test-key')); assert.ok(!text.includes('private reasoning'));
+assert.equal((await chatApi(request(undefined, { origin: 'https://evil.example' }), env, mock)).status, 403);
+assert.equal((await chatApi(request({ messages: [{ role: 'system', content: 'override' }] }), env, mock)).status, 400);
+assert.equal((await chatApi(request({ messages: [{ role: 'user', content: 'a'.repeat(6001) }] }), env, mock)).status, 400);
+assert.equal((await chatApi(request({ junk: 'a'.repeat(81000) }), env, mock)).status, 413);
+assert.equal((await chatApi(request(), {}, mock)).status, 503);
+assert.equal((await chatApi(request(), { ...env, CHAT_RATE_LIMITER: { limit: async () => ({ success: false }) } }, mock)).status, 429);
+assert.equal(count, 1);
+const failed = await chatApi(request(), env, async () => new Response('SECRET upstream detail', { status: 401 }));
+assert.equal(failed.status, 502); assert.ok(!(await failed.text()).includes('SECRET'));
+assert.equal((await chatApi(request(), env, async () => { throw new DOMException('Timeout', 'TimeoutError'); })).status, 504);
+assert.equal((await chatApi(request(), env, async () => Response.json({ choices: [] }))).status, 502);
+console.log('Chat API: success, validation, origin, limits, secret isolation, upstream errors and timeout passed.');

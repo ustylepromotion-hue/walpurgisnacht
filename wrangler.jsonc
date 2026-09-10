@@ -35,5 +35,12 @@
         "period": 60
       }
     }
+  ],
+  "d1_databases": [
+    {
+      "binding": "walpurgisnacht_usage",
+      "database_name": "walpurgisnacht-usage",
+      "database_id": "391e63d3-75b6-4416-b3f3-d592f09bef21"
+    }
   ]
 }

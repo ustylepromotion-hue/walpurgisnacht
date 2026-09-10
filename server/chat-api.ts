@@ -8,6 +8,13 @@ export interface ChatEnv {
   CHAT_RATE_LIMITER?: {
     limit(options: { key: string }): Promise<{ success: boolean }>;
   };
+  walpurgisnacht_usage?: {
+    prepare(sql: string): {
+      bind(...args: unknown[]): {
+        first<T = Record<string, unknown>>(): Promise<T | null>;
+      };
+    };
+  };
 }
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 const json = (data: object, status = 200) =>
@@ -137,6 +144,36 @@ export async function chatApi(
         },
         403,
       );
+    // 日次リミット: 同一IPから1日100回(JST基準)。D1のアトミックなカウンタで管理する。
+    // DB障害時はサービスを止めないよう制限をスキップする(フェイルオープン)。
+    if (env.walpurgisnacht_usage) {
+      try {
+        const now = new Date();
+        const jstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10);
+        const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
+        const row = await env.walpurgisnacht_usage
+          .prepare(
+            `INSERT INTO chat_usage (day, ip, count) VALUES (?, ?, 1)
+             ON CONFLICT(day, ip) DO UPDATE SET count = count + 1
+             RETURNING count`,
+          )
+          .bind(jstDate, ip)
+          .first<{ count: number }>();
+        if (row && row.count > 100)
+          return json(
+            {
+              error: '本日の利用回数に達しました。また明日お試しください。',
+            },
+            429,
+          );
+      } catch (error) {
+        console.error('daily_limit_failed', {
+          type: error instanceof Error ? error.name : 'unknown',
+        });
+      }
+    }
     const messages: ChatMessage[] = [];
     let chars = 0;
     for (const m of data.messages) {

@@ -164,4 +164,88 @@ assert.equal(
   ).status,
   503,
 );
+// 日次リミット: D1カウンタが101以上なら429 / 100以下なら200 / DB障害ならスキップ
+const usageCounts = new Map();
+const makeUsageDb = () => ({
+  prepare: () => ({
+    bind: (...args) => ({
+      first: async () => {
+        const key = String(args[0]) + ':' + String(args[1]);
+        usageCounts.set(key, (usageCounts.get(key) ?? 0) + 1);
+        return { count: usageCounts.get(key) };
+      },
+    }),
+  }),
+});
+// 101回目(既に100回分のカウントがある) → 429
+const jstToday = new Date(
+  new Date().getTime() + 9 * 60 * 60 * 1000,
+)
+  .toISOString()
+  .slice(0, 10);
+usageCounts.set(jstToday + ':203.0.113.1', 100);
+const limited = await chatApi(
+  new Request('https://dax-place.com/walpurgisnacht/api/chat', {
+    method: 'POST',
+    headers: {
+      origin: 'https://dax-place.com',
+      'Content-Type': 'application/json',
+      'cf-connecting-ip': '203.0.113.1',
+    },
+    body: JSON.stringify({
+      turnstileToken: 'test-token',
+      messages: [{ role: 'user', content: 'x' }],
+    }),
+  }),
+  { ...env, walpurgisnacht_usage: makeUsageDb() },
+  async (url) => {
+    if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+      return Response.json({ success: true });
+    return Response.json({ choices: [{ message: { content: 'ok' } }] });
+  },
+);
+assert.equal(limited.status, 429);
+assert.match(await limited.text(), /本日の利用回数/);
+// 100回以下 → 200
+const within = await chatApi(
+  new Request('https://dax-place.com/walpurgisnacht/api/chat', {
+    method: 'POST',
+    headers: {
+      origin: 'https://dax-place.com',
+      'Content-Type': 'application/json',
+      'cf-connecting-ip': '203.0.113.2',
+    },
+    body: JSON.stringify({
+      turnstileToken: 'test-token',
+      messages: [{ role: 'user', content: 'x' }],
+    }),
+  }),
+  { ...env, walpurgisnacht_usage: makeUsageDb() },
+  async (url) => {
+    if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+      return Response.json({ success: true });
+    return Response.json({ choices: [{ message: { content: 'ok' } }] });
+  },
+);
+assert.equal(within.status, 200);
+// DB障害(例外) → 200(フェイルオープン)
+const brokenDb = {
+  prepare: () => ({
+    bind: () => ({
+      first: async () => {
+        throw new Error('db down');
+      },
+    }),
+  }),
+};
+const dbError = await chatApi(
+  request(),
+  { ...env, walpurgisnacht_usage: brokenDb },
+  async (url) => {
+    if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+      return Response.json({ success: true });
+    return Response.json({ choices: [{ message: { content: 'ok' } }] });
+  },
+);
+assert.equal(dbError.status, 200);
 console.log('Chat API: success, validation, origin, limits, secret isolation, upstream errors and timeout passed.');

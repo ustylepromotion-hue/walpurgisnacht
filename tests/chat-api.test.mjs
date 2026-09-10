@@ -72,7 +72,9 @@ const akuma = await chatApi(
     const body = JSON.parse(init.body);
     assert.match(body.messages[0].content, /悪魔モードの人格設定/);
     assert.match(body.messages[0].content, /一人称は「わたし」/);
-    assert.match(body.messages[0].content, /〜かしら/);
+    assert.match(body.messages[0].content, /敬語は使わない/);
+    assert.match(body.messages[0].content, /けど。。/);
+    assert.match(body.messages[0].content, /暁美ほむらではないわ/);
     assert.match(body.messages[0].content, /まどかの話/);
     assert.ok(!body.messages[0].content.includes('クソガキモードの人格設定'));
     assert.equal(body.temperature, 0.5);

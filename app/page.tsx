@@ -545,12 +545,15 @@ function Workspace() {
                   </button>
                 </div>
               </div>
+            </form>
+            {/* テキストボックス枠外: アクセス確認は確認完了までだけ表示し、済んだら消える */}
+            {siteKey && !turnstileToken && (
               <div className="turnstile-row">
-                {turnstileLoading && !turnstileToken ? (
-                  <span className="turnstile-status">
-                    アクセス確認中…
-                  </span>
-                ) : !turnstileToken ? (
+                <span className="turnstile-notice">
+                  送信前に、こちらをチェックしてね
+                </span>
+                <Turnstile key={turnstileEpoch} siteKey={siteKey} />
+                {!turnstileLoading && (
                   <button
                     type="button"
                     className="turnstile-status turnstile-retry"
@@ -560,16 +563,11 @@ function Workspace() {
                       setTurnstileEpoch((e) => e + 1);
                     }}
                   >
-                    アクセス確認を読み込めません。タップして再試行
+                    読み込めない場合はタップで再試行
                   </button>
-                ) : (
-                  <span className="turnstile-status turnstile-ok">
-                    アクセス確認済み
-                  </span>
                 )}
-                <Turnstile key={turnstileEpoch} siteKey={siteKey} />
               </div>
-            </form>
+            )}
             <p className="demo-note">
               現在はAIによる回答です。会話はこの画面を開いている間のみ保持されます。
             </p>

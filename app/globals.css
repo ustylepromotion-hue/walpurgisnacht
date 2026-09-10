@@ -545,18 +545,13 @@ h1 {
 }
 .turnstile-row {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 10px;
-  margin-top: 10px;
-  min-height: 65px;
+  margin-top: 12px;
 }
-.turnstile-status {
+.turnstile-notice {
   font-size: 11px;
   color: #b3a0c6;
-}
-.turnstile-status.turnstile-ok {
-  color: #7d9b76;
 }
 .turnstile-status.turnstile-retry {
   background: none;

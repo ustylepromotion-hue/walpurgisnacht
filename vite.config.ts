@@ -12,6 +12,11 @@ export default defineConfig(async () => {
     server: process.env.CODEX_SANDBOX === 'seatbelt'
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
+    define: {
+      'import.meta.env.TURNSTILE_SITEKEY': JSON.stringify(
+        process.env.TURNSTILE_SITEKEY ?? '',
+      ),
+    },
     plugins: [vinext(), cloudflare({
       viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
       configPath: './wrangler.jsonc',

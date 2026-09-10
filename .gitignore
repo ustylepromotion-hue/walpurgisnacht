@@ -40,3 +40,9 @@ next-env.d.ts
 .dev.vars*
 *.tsbuildinfo
 /scripts/inspect-cloudflare.py
+
+# local session/guard state
+.guard/
+.hermes/
+/セッションログ/
+/引き継ぎ/

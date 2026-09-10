@@ -1,7 +1,10 @@
+export type ChatMode = 'normal' | 'kusogaki' | 'akuma';
 export type Message = { role: 'user' | 'assistant'; content: string };
 export async function reply(
   messages: Message[],
+  mode: ChatMode = 'normal',
   signal?: AbortSignal,
+  turnstileToken = '',
 ): Promise<Message> {
   // Send a bounded recent context, retaining the current question in full.
   const recent: Message[] = [];
@@ -14,7 +17,7 @@ export async function reply(
   const response = await fetch('/walpurgisnacht/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages: recent }),
+    body: JSON.stringify({ messages: recent, mode, turnstileToken }),
     signal,
   });
   let data: { error?: string; content?: string; truncated?: boolean };

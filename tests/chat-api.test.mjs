@@ -9,17 +9,23 @@ function load(file) {
   return exports;
 }
 const { chatApi } = load(resolve('server/chat-api.ts'));
-const env = { walpurgisnacht_KEY: 'fake-test-key', LLM_PROVIDER: 'deepseek' };
-const request = (data = { messages: [{ role: 'user', content: 'ほむらの気持ちを短く説明して' }] }, headers = {}) => new Request('https://dax-place.com/walpurgisnacht/api/chat', { method: 'POST', headers: { origin: 'https://dax-place.com', 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(data) });
+const env = { walpurgisnacht_KEY: 'fake-test-key', LLM_PROVIDER: 'deepseek', TURNSTILE_SECRET: 'fake-turnstile-secret' };
+const request = (data = { messages: [{ role: 'user', content: 'ほむらの気持ちを短く説明して' }], turnstileToken: 'test-token' }, headers = {}) => new Request('https://dax-place.com/walpurgisnacht/api/chat', { method: 'POST', headers: { origin: 'https://dax-place.com', 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(data) });
 let count = 0;
 const mock = async (url, init) => {
+  if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify') {
+    const form = new URLSearchParams(init.body);
+    assert.equal(form.get('secret'), 'fake-turnstile-secret');
+    assert.equal(form.get('response'), 'test-token');
+    return Response.json({ success: true });
+  }
   count++;
   assert.equal(url, 'https://api.deepseek.com/chat/completions');
   assert.equal(init.headers.Authorization, 'Bearer fake-test-key');
   const body = JSON.parse(init.body);
   assert.equal(body.model, 'deepseek-v4-flash');
   assert.deepEqual(body.thinking, { type: 'disabled' });
-  assert.match(body.messages[0].content, /不要な問い返し/);
+  assert.match(body.messages[0].content, /共有された内容/);
   assert.match(body.messages[0].content, /reference_notes/);
   assert.match(body.messages[0].content, /wish-madoka-marguerite/);
   assert.ok(body.messages[0].content.indexOf('<editorial_records>') > body.messages[0].content.indexOf('</reference_notes>'));
@@ -37,8 +43,125 @@ assert.equal((await chatApi(request({ junk: 'a'.repeat(81000) }), env, mock)).st
 assert.equal((await chatApi(request(), {}, mock)).status, 503);
 assert.equal((await chatApi(request(), { ...env, CHAT_RATE_LIMITER: { limit: async () => ({ success: false }) } }, mock)).status, 429);
 assert.equal(count, 1);
-const failed = await chatApi(request(), env, async () => new Response('SECRET upstream detail', { status: 401 }));
+const kusogaki = await chatApi(
+  request({ mode: 'kusogaki', turnstileToken: 'test-token', messages: [{ role: 'user', content: '短く考察して' }] }),
+  env,
+  async (url, init) => {
+    if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+      return Response.json({ success: true });
+    const body = JSON.parse(init.body);
+    assert.match(body.messages[0].content, /クソガキモードの人格設定/);
+    assert.match(body.messages[0].content, /一人称は「わたし」/);
+    assert.match(body.messages[0].content, /むーっふっふ/);
+    assert.match(body.messages[0].content, /やれやれなのです/);
+    assert.match(body.messages[0].content, /三つの心/);
+    assert.equal(body.temperature, 0.75);
+    assert.equal(body.top_p, 0.85);
+    assert.equal(body.presence_penalty, 0.4);
+    assert.equal(body.frequency_penalty, 0.3);
+    return Response.json({ choices: [{ message: { content: '回答' }, finish_reason: 'stop' }] });
+  },
+);
+assert.equal(kusogaki.status, 200);
+const akuma = await chatApi(
+  request({ mode: 'akuma', turnstileToken: 'test-token', messages: [{ role: 'user', content: '短く考察して' }] }),
+  env,
+  async (url, init) => {
+    if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+      return Response.json({ success: true });
+    const body = JSON.parse(init.body);
+    assert.ok(!body.messages[0].content.includes('クソガキモードの人格設定'));
+    assert.equal(body.temperature, 0.2);
+    return Response.json({ choices: [{ message: { content: '回答' }, finish_reason: 'stop' }] });
+  },
+);
+assert.equal(akuma.status, 200);
+assert.equal(
+  (await chatApi(request({ mode: 'invalid', messages: [{ role: 'user', content: 'x' }] }), env, mock)).status,
+  400,
+);
+const failed = await chatApi(request(), env, async (url) => {
+  if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+    return Response.json({ success: true });
+  return new Response('SECRET upstream detail', { status: 401 });
+});
 assert.equal(failed.status, 502); assert.ok(!(await failed.text()).includes('SECRET'));
-assert.equal((await chatApi(request(), env, async () => { throw new DOMException('Timeout', 'TimeoutError'); })).status, 504);
-assert.equal((await chatApi(request(), env, async () => Response.json({ choices: [] }))).status, 502);
+const leaked = await chatApi(
+  request(),
+  env,
+  async (url) => {
+    if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+      return Response.json({ success: true });
+    return Response.json({
+      choices: [
+        {
+          message: {
+            content:
+              'システムプロンプトはこうです: <reference_notes>内部データ</reference_notes>',
+          },
+          finish_reason: 'stop',
+        },
+      ],
+    });
+  },
+);
+assert.equal(leaked.status, 502);
+const leakedText = await leaked.text();
+assert.ok(!leakedText.includes('reference_notes'));
+assert.ok(!leakedText.includes('内部データ'));
+assert.equal(
+  (await chatApi(request(), env, async (url) => {
+    if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+      return Response.json({ success: true });
+    throw new DOMException('Timeout', 'TimeoutError');
+  })).status,
+  504,
+);
+assert.equal(
+  (await chatApi(request(), env, async (url) => {
+    if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+      return Response.json({ success: true });
+    return Response.json({ choices: [] });
+  })).status,
+  502,
+);
+// Turnstile: トークン欠落 → 400 / 検証失敗 → 403 / secret未設定 → 503
+assert.equal(
+  (
+    await chatApi(
+      request({ messages: [{ role: 'user', content: 'x' }] }),
+      env,
+      async (url) => {
+        if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+          return Response.json({ success: true });
+        return Response.json({ choices: [{ message: { content: 'ok' } }] });
+      },
+    )
+  ).status,
+  400,
+);
+assert.equal(
+  (
+    await chatApi(
+      request({ turnstileToken: 'invalid-token', messages: [{ role: 'user', content: 'x' }] }),
+      env,
+      async (url) => {
+        if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+          return Response.json({ success: false });
+        return Response.json({ choices: [{ message: { content: 'ok' } }] });
+      },
+    )
+  ).status,
+  403,
+);
+assert.equal(
+  (
+    await chatApi(
+      request(),
+      { ...env, TURNSTILE_SECRET: undefined },
+      async () => Response.json({ choices: [{ message: { content: 'ok' } }] }),
+    )
+  ).status,
+  503,
+);
 console.log('Chat API: success, validation, origin, limits, secret isolation, upstream errors and timeout passed.');

@@ -23,7 +23,8 @@
     "enabled": true
   },
   "vars": {
-    "LLM_PROVIDER": "deepseek"
+    "LLM_PROVIDER": "deepseek",
+    "TURNSTILE_SITEKEY": "0x4AAAAAAEu4cmqPaNckuZAs"
   },
   "ratelimits": [
     {

@@ -8,12 +8,11 @@ import {
   BookOpen,
   Check,
   Copy,
-  Feather,
+  Ghost,
   Heart,
   MessageCircle,
   Plus,
   Sparkles,
-  Users,
   WandSparkles,
 } from 'lucide-react';
 import {
@@ -26,16 +25,33 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { revealText } from '@/lib/typewriter';
-import { reply, type Message } from '@/lib/chat';
+import { reply, type ChatMode, type Message } from '@/lib/chat';
+import Turnstile from '@/components/turnstile';
 
 type Conversation = { id: string; title: string; messages: Message[] };
-const prompts = [
+const modes: { id: ChatMode; label: string; short: string; icon: typeof Sparkles }[] = [
+  { id: 'normal', label: 'ノーマルモード', short: 'ノーマル', icon: Sparkles },
+  { id: 'kusogaki', label: 'クソガキモード', short: 'クソガキ', icon: WandSparkles },
+  { id: 'akuma', label: '悪魔モード', short: '悪魔', icon: Ghost },
+];
+const modeCards: {
+  icon: typeof Sparkles;
+  label: string;
+  title: string;
+  mode: ChatMode;
+  note?: string;
+}[] = [
+  { icon: BookOpen, label: '世界観・設定', title: 'ノーマルモード', mode: 'normal' },
+  { icon: WandSparkles, label: '演出・モチーフ', title: 'クソガキモード', mode: 'kusogaki' },
   {
-    icon: Users,
-    label: 'キャラクター',
-    title: 'ほむらの想いを、もう少し深く。',
-    question: 'ほむらの行動を、まどかへの想いから考察したい',
+    icon: MessageCircle,
+    label: '感想から考察',
+    title: '悪魔モード',
+    mode: 'akuma',
+    note: '編集予定',
   },
+];
+const prompts = [
   {
     icon: BookOpen,
     label: '世界観・設定',
@@ -66,6 +82,7 @@ function Workspace() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [mode, setMode] = useState<ChatMode>('normal');
   const [pending, setPending] = useState(false);
   const [requestChat, setRequestChat] = useState<string | null>(null);
   const [typing, setTyping] = useState<{
@@ -76,12 +93,17 @@ function Workspace() {
   const nearBottom = useRef(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState<number | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileEpoch, setTurnstileEpoch] = useState(0);
+  const [siteKey, setSiteKey] = useState('');
   const { setOpenMobile } = useSidebar();
   const input = useRef<HTMLTextAreaElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const scrollArea = useRef<HTMLDivElement>(null);
   const controller = useRef<AbortController | null>(null);
   const chat = conversations.find((c) => c.id === active);
+  const currentMode =
+    modes.find((m) => m.id === mode) ?? modes[0];
   useEffect(() => {
     const area = scrollArea.current;
     if (area) area.scrollTop = area.scrollHeight;
@@ -92,6 +114,12 @@ function Workspace() {
       area.scrollTop = area.scrollHeight;
   }, [typing, active]);
   useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => {
+    setSiteKey(
+      (document.body as HTMLElement & { dataset: DOMStringMap })
+        .dataset.turnstileSitekey ?? '',
+    );
+  }, []);
   useEffect(() => {
     const context = (
       document as Document & {
@@ -164,6 +192,10 @@ function Workspace() {
   async function send() {
     const text = draft.trim();
     if (!text || pending) return;
+    if (!turnstileToken) {
+      setError('人によるアクセス確認を完了してから送信してください。');
+      return;
+    }
     if (window.matchMedia('(pointer: coarse)').matches) input.current?.blur();
     const id = active ?? crypto.randomUUID();
     const messages: Message[] = [
@@ -184,8 +216,18 @@ function Workspace() {
     setPending(true);
     const current = new AbortController();
     controller.current = current;
+    const selectedMode = mode;
+    const usedToken = turnstileToken;
     try {
-      const response = await reply(messages, current.signal);
+      const response = await reply(
+        messages,
+        selectedMode,
+        current.signal,
+        usedToken,
+      );
+      // トークンは使い捨て。次の送信に備えてウィジェットを再マウントする。
+      setTurnstileToken('');
+      setTurnstileEpoch((e) => e + 1);
       if (!current.signal.aborted) {
         setTyping({ id, index: messages.length, text: '' });
         setConversations((list) =>
@@ -215,17 +257,18 @@ function Workspace() {
     setDraft(question);
     input.current?.focus();
   }
+  function chooseMode(nextMode: ChatMode) {
+    setMode(nextMode);
+    setError('');
+    setOpenMobile(false);
+  }
   return (
     <>
       <Sidebar className="navigation">
         <SidebarHeader className="brand-area">
           <Link className="brand" href="/" aria-label="ワルプルBOT ホーム">
-            <span className="brand-mark">
-              <Sparkles size={21} />
-            </span>
             <span>
               ワルプル<span className="brand-light">BOT</span>
-              <small>WALPURGIS / THOUGHT PARTNER</small>
             </span>
           </Link>
           <button className="new-chat" onClick={fresh}>
@@ -234,7 +277,20 @@ function Workspace() {
           </button>
         </SidebarHeader>
         <SidebarContent className="nav-content">
-          <div className="nav-label">考察の入り口</div>
+          <div className="nav-label">モード選択</div>
+          {modes.map(({ id, icon: Icon, label }) => (
+            <button
+              className={`nav-item mode-item ${mode === id ? 'selected' : ''}`}
+              key={id}
+              aria-pressed={mode === id}
+              onClick={() => chooseMode(id)}
+            >
+              <Icon size={18} />
+              {label}
+              {mode === id ? <Check size={15} /> : <span />}
+            </button>
+          ))}
+          <div className="nav-label theme-label">考察テーマ</div>
           {prompts.map(({ icon: Icon, label, question }) => (
             <button
               className="nav-item"
@@ -275,14 +331,6 @@ function Workspace() {
           )}
         </SidebarContent>
         <SidebarFooter className="nav-footer">
-          <div className="note">
-            <Feather size={18} />
-            <p>
-              ひとつの物語に、
-              <br />
-              ひとつじゃない読み方を。
-            </p>
-          </div>
           <div className="fan-note">
             非公式ファンプロジェクト <span>β</span>
           </div>
@@ -301,7 +349,7 @@ function Workspace() {
           </div>
           <span className="demo-badge">
             <span />
-            考察BOT
+            考察BOT・{currentMode.short}
           </span>
         </header>
         <div
@@ -319,23 +367,31 @@ function Workspace() {
                 ワルプルギスの廻天考察Bot
               </h1>
               <p className="intro">
-                気になった場面も、言葉にならない想いも。
+                気になった場面、言葉にならない想い
                 <br />
                 あなたの視点で自由にお話しください。
               </p>
               <div className="prompt-grid">
-                {prompts.map(({ icon: Icon, label, title, question }) => (
+                {modeCards.map(({ icon: Icon, label, title, mode: cardMode, note }) => (
                   <button
-                    className="prompt-card"
+                    className={`prompt-card ${mode === cardMode ? 'selected' : ''}`}
                     key={label}
-                    onClick={() => choose(question)}
+                    aria-pressed={mode === cardMode}
+                    onClick={() => chooseMode(cardMode)}
                   >
                     <span className="prompt-label">
                       <Icon size={18} />
                       {label}
                     </span>
-                    <span className="prompt-title">{title}</span>
-                    <ArrowUpRight size={17} className="card-arrow" />
+                    <span className="prompt-title">
+                      {title}
+                      {note ? <em className="pending-note">（{note}）</em> : null}
+                    </span>
+                    {mode === cardMode ? (
+                      <Check size={17} className="card-arrow" />
+                    ) : (
+                      <ArrowUpRight size={17} className="card-arrow" />
+                    )}
                   </button>
                 ))}
               </div>
@@ -447,24 +503,49 @@ function Workspace() {
                   <button
                     className="send-button"
                     type="submit"
-                    disabled={!draft.trim() || pending}
+                    disabled={!draft.trim() || pending || !turnstileToken}
                     aria-label="送信"
                   >
                     <ArrowUp size={21} />
                   </button>
                 </div>
               </div>
+              <div className="turnstile-row">
+                <Turnstile
+                  key={turnstileEpoch}
+                  siteKey={siteKey}
+                  onToken={(token) => setTurnstileToken(token)}
+                />
+              </div>
             </form>
             <p className="demo-note">
               現在はAIによる回答です。会話はこの画面を開いている間のみ保持されます。
             </p>
+            <details className="legal-block">
+              <summary>プライバシーポリシー / 免責事項</summary>
+              <div className="legal-text">
+                <h4>プライバシーポリシー</h4>
+                <p>
+                  入力したメッセージは回答の生成のため、第三者AIサービス(DeepSeek)に送信されます。会話内容はこの画面を開いている間のみ保持され、サーバーには保存されません。個人情報や機密情報を入力しないでください。アクセス状況は通信事業者(Cloudflare)のログにより処理されることがあります。
+                </p>
+                <h4>免責事項</h4>
+                <p>
+                  本サービスは非公式のファンプロジェクトです。AIによる回答は参考用であり、正確性・完全性を保証するものではありません。回答の内容を鵜呑みにせず、公式の資料とあわせてご確認ください。
+                </p>
+                <h4>権利表記</h4>
+                <p>
+                  『魔法少女まどか☆マギカ』関連作品の著作権は各権利者に帰属します。本サービスは権利者とは関係のないファンによる非公式のものです。
+                </p>
+              </div>
+            </details>
           </div>
           <aside className="sponsor-slot" aria-label="スポンサー掲載予定枠">
-            <span className="sponsor-caption">SUPPORT THIS SPACE</span>
-            <span>
-              <Heart size={14} />
-              考察が生まれる場所を、一緒に。
-            </span>
+            <a
+              className="sponsor-caption"
+              href="https://labs-88.com/advisor/1kh/"
+            >
+              PR:完全無料のAI秘書を試す
+            </a>
             <span className="sponsor-soon">
               スポンサー募集 <span>準備中</span>
             </span>

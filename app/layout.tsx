@@ -12,7 +12,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ja">
-      <body>{children}</body>
+      <body data-turnstile-sitekey={import.meta.env.TURNSTILE_SITEKEY ?? ''}>
+        {children}
+      </body>
     </html>
   );
 }

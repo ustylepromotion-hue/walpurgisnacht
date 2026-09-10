@@ -1,8 +1,10 @@
 import { buildSystemContext } from './context';
+import type { ChatMode } from './prompt';
 
 export interface ChatEnv {
   walpurgisnacht_KEY?: string;
   LLM_PROVIDER?: string;
+  TURNSTILE_SECRET?: string;
   CHAT_RATE_LIMITER?: {
     limit(options: { key: string }): Promise<{ success: boolean }>;
   };
@@ -89,6 +91,52 @@ export async function chatApi(
       data.messages.length > 20
     )
       return json({ error: '会話の形式が正しくありません。' }, 400);
+    const requestedMode = 'mode' in data ? data.mode : 'normal';
+    if (
+      requestedMode !== 'normal' &&
+      requestedMode !== 'kusogaki' &&
+      requestedMode !== 'akuma'
+    )
+      return json({ error: 'モード指定が正しくありません。' }, 400);
+    const mode: ChatMode = requestedMode;
+    // Turnstile: 人間によるアクセスであることを検証する。
+    // トークンは使い捨てのため、送信のたびにウィジェットから取得する。
+    if (!env.TURNSTILE_SECRET)
+      return json(
+        {
+          error: '認証設定を確認しています。時間をおいてお試しください。',
+        },
+        503,
+      );
+    const turnstileToken = 'turnstileToken' in data ? data.turnstileToken : '';
+    if (typeof turnstileToken !== 'string' || !turnstileToken)
+      return json(
+        { error: '人によるアクセス確認を完了してから送信してください。' },
+        400,
+      );
+    const verifyBody = new URLSearchParams({
+      secret: env.TURNSTILE_SECRET,
+      response: turnstileToken,
+    });
+    const verifyResponse = await upstream(
+      'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: verifyBody.toString(),
+      },
+    );
+    const verifyResult = (await verifyResponse.json()) as {
+      success?: boolean;
+    };
+    if (!verifyResult.success)
+      return json(
+        {
+          error:
+            '人によるアクセス確認をやり直してください。',
+        },
+        403,
+      );
     const messages: ChatMessage[] = [];
     let chars = 0;
     for (const m of data.messages) {
@@ -112,6 +160,15 @@ export async function chatApi(
         400,
       );
     const endpoint = 'https://api.deepseek.com/chat/completions';
+    const llmParams =
+      mode === 'kusogaki'
+        ? {
+            temperature: 0.75,
+            top_p: 0.85,
+            presence_penalty: 0.4,
+            frequency_penalty: 0.3,
+          }
+        : { temperature: 0.2 };
     const response = await upstream(endpoint, {
       method: 'POST',
       headers: {
@@ -123,12 +180,12 @@ export async function chatApi(
         messages: [
           {
             role: 'system',
-            content: buildSystemContext(),
+            content: buildSystemContext(mode),
           },
           ...messages,
         ],
         max_tokens: 2048,
-        temperature: 0.2,
+        ...llmParams,
         stream: false,
         thinking: { type: 'disabled' },
       }),
@@ -154,6 +211,26 @@ export async function chatApi(
     if (typeof content !== 'string' || !content.trim())
       return json(
         { error: '回答を受け取れませんでした。もう一度お試しください。' },
+        502,
+      );
+    // プロンプトインジェクション対策: システム内部の構造・秘密が回答に漏れた場合は返さない。
+    // システムプロンプトの参照タグ・編集記録タグ・シークレット名・APIエンドポイントが
+    // 回答に含まれた場合、ユーザーに入力内容の誘導を検知した旨を伝えて処理を打ち切る。
+    const LEAK_MARKERS = [
+      '<reference_notes>',
+      '</reference_notes>',
+      '<editorial_records>',
+      '</editorial_records>',
+      'walpurgisnacht_KEY',
+      'api.deepseek.com',
+      'Bearer ',
+    ];
+    if (LEAK_MARKERS.some((marker) => content.includes(marker)))
+      return json(
+        {
+          error:
+            '回答の内容に問題が検出されました。別の聞き方でお試しください。',
+        },
         502,
       );
     return json({

@@ -167,10 +167,12 @@ assert.equal(
 // 日次リミット: D1カウンタが101以上なら429 / 100以下なら200 / DB障害ならスキップ
 const usageCounts = new Map();
 const makeUsageDb = () => ({
-  prepare: () => ({
+  prepare: (sql) => ({
     bind: (...args) => ({
       first: async () => {
-        const key = String(args[0]) + ':' + String(args[1]);
+        const key = sql.includes('usage_daily')
+          ? 'global:' + String(args[0])
+          : String(args[0]) + ':' + String(args[1]);
         usageCounts.set(key, (usageCounts.get(key) ?? 0) + 1);
         return { count: usageCounts.get(key) };
       },
@@ -248,4 +250,28 @@ const dbError = await chatApi(
   },
 );
 assert.equal(dbError.status, 200);
+// グローバル日次上限: 全IP合計501回目 → 429
+usageCounts.set('global:' + jstToday, 500);
+const globalLimited = await chatApi(
+  new Request('https://dax-place.com/walpurgisnacht/api/chat', {
+    method: 'POST',
+    headers: {
+      origin: 'https://dax-place.com',
+      'Content-Type': 'application/json',
+      'cf-connecting-ip': '198.51.100.9',
+    },
+    body: JSON.stringify({
+      turnstileToken: 'test-token',
+      messages: [{ role: 'user', content: 'x' }],
+    }),
+  }),
+  { ...env, walpurgisnacht_usage: makeUsageDb() },
+  async (url) => {
+    if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+      return Response.json({ success: true });
+    return Response.json({ choices: [{ message: { content: 'ok' } }] });
+  },
+);
+assert.equal(globalLimited.status, 429);
+assert.match(await globalLimited.text(), /本日の回答数/);
 console.log('Chat API: success, validation, origin, limits, secret isolation, upstream errors and timeout passed.');

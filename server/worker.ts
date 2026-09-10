@@ -44,4 +44,27 @@ export default {
     }
     return withSecurityHeaders(await handler.fetch(request, env, ctx));
   },
+  // 毎日(JST 3:00 = UTC 18:00)に古い利用記録を削除してD1の肥大化を防ぐ。
+  // chat_usage(日×IP)は14日分、usage_daily(日)は31日分を保持する。
+  async scheduled(
+    _controller: ScheduledController,
+    env: ChatEnv,
+    _ctx: ExecutionContext,
+  ): Promise<void> {
+    if (!env.walpurgisnacht_usage) return;
+    const deleted = await env.walpurgisnacht_usage
+      .prepare(
+        `DELETE FROM chat_usage
+         WHERE day < date('now', '-14 days')`,
+      )
+      .bind();
+    await deleted.run?.();
+    const deletedDaily = await env.walpurgisnacht_usage
+      .prepare(
+        `DELETE FROM usage_daily
+         WHERE day < date('now', '-31 days')`,
+      )
+      .bind();
+    await deletedDaily.run?.();
+  },
 };

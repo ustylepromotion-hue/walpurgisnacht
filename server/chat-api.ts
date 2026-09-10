@@ -12,6 +12,7 @@ export interface ChatEnv {
     prepare(sql: string): {
       bind(...args: unknown[]): {
         first<T = Record<string, unknown>>(): Promise<T | null>;
+        run?(): Promise<{ success: boolean }>;
       };
     };
   };
@@ -170,6 +171,36 @@ export async function chatApi(
           );
       } catch (error) {
         console.error('daily_limit_failed', {
+          type: error instanceof Error ? error.name : 'unknown',
+        });
+      }
+    }
+    // グローバル日次上限: 全IP合計で1日500回(JST基準)。IP分散攻撃でも
+    // コストの絶対上限を担保する。IP単位の100回より先に達するケースが多い。
+    if (env.walpurgisnacht_usage) {
+      try {
+        const now = new Date();
+        const jstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10);
+        const row = await env.walpurgisnacht_usage
+          .prepare(
+            `INSERT INTO usage_daily (day, count) VALUES (?, 1)
+             ON CONFLICT(day) DO UPDATE SET count = count + 1
+             RETURNING count`,
+          )
+          .bind(jstDate)
+          .first<{ count: number }>();
+        if (row && row.count > 500)
+          return json(
+            {
+              error:
+                '本日の回答数に達しました。また明日お試しください。',
+            },
+            429,
+          );
+      } catch (error) {
+        console.error('global_limit_failed', {
           type: error instanceof Error ? error.name : 'unknown',
         });
       }

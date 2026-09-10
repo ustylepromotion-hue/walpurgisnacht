@@ -95,6 +95,8 @@ function Workspace() {
   const [copied, setCopied] = useState<number | null>(null);
   const [turnstileEpoch, setTurnstileEpoch] = useState(0);
   const [siteKey, setSiteKey] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileLoading, setTurnstileLoading] = useState(true);
   const { setOpenMobile } = useSidebar();
   const input = useRef<HTMLTextAreaElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
@@ -119,6 +121,37 @@ function Workspace() {
         .dataset.turnstileSitekey ?? '',
     );
   }, []);
+  // Turnstile: フォーム内のhidden inputからトークンをポーリングで監視する。
+  // チャレンジ完了(非表示でも数秒かかる)前に送信するとエラーになるため、
+  // トークンが揃うまで送信ボタンを無効化し、ロード失敗も検出する。
+  useEffect(() => {
+    let stopped = false;
+    let timer: number | undefined;
+    let failTimer: number | undefined;
+    const poll = () => {
+      if (stopped) return;
+      const input = document.querySelector(
+        '.cf-turnstile input[name="cf-turnstile-response"]',
+      ) as HTMLInputElement | null;
+      const token = input?.value ?? '';
+      setTurnstileToken(token);
+      if (token) {
+        setTurnstileLoading(false);
+        return;
+      }
+      timer = window.setTimeout(poll, 500);
+    };
+    poll();
+    // 12秒経過してもトークンが無い場合はロード失敗とみなす
+    failTimer = window.setTimeout(() => {
+      if (!stopped) setTurnstileLoading(false);
+    }, 12000);
+    return () => {
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      if (failTimer !== undefined) window.clearTimeout(failTimer);
+    };
+  }, [turnstileEpoch]);
   useEffect(() => {
     const context = (
       document as Document & {
@@ -192,14 +225,9 @@ function Workspace() {
     const text = draft.trim();
     if (!text || pending) return;
     // Turnstile はフォーム内の hidden input にトークンを書き込む。
-    const turnstileToken =
-      (
-        document.querySelector(
-          '.cf-turnstile input[name="cf-turnstile-response"]',
-        ) as HTMLInputElement | null
-      )?.value ?? '';
+    // state のトークンはポーリングで常に最新化されている。
     if (!turnstileToken) {
-      setError('人によるアクセス確認を完了してから送信してください。');
+      setError('アクセス確認が完了するまで、もう少しお待ちください。');
       return;
     }
     if (window.matchMedia('(pointer: coarse)').matches) input.current?.blur();
@@ -232,6 +260,8 @@ function Workspace() {
         usedToken,
       );
       // トークンは使い捨て。次の送信に備えてウィジェットを再マウントする。
+      setTurnstileToken('');
+      setTurnstileLoading(true);
       setTurnstileEpoch((e) => e + 1);
       if (!current.signal.aborted) {
         setTyping({ id, index: messages.length, text: '' });
@@ -508,7 +538,7 @@ function Workspace() {
                   <button
                     className="send-button"
                     type="submit"
-                    disabled={!draft.trim() || pending}
+                    disabled={!draft.trim() || pending || !turnstileToken}
                     aria-label="送信"
                   >
                     <ArrowUp size={21} />
@@ -516,6 +546,27 @@ function Workspace() {
                 </div>
               </div>
               <div className="turnstile-row">
+                {turnstileLoading && !turnstileToken ? (
+                  <span className="turnstile-status">
+                    アクセス確認中…
+                  </span>
+                ) : !turnstileToken ? (
+                  <button
+                    type="button"
+                    className="turnstile-status turnstile-retry"
+                    onClick={() => {
+                      setTurnstileToken('');
+                      setTurnstileLoading(true);
+                      setTurnstileEpoch((e) => e + 1);
+                    }}
+                  >
+                    アクセス確認を読み込めません。タップして再試行
+                  </button>
+                ) : (
+                  <span className="turnstile-status turnstile-ok">
+                    アクセス確認済み
+                  </span>
+                )}
                 <Turnstile key={turnstileEpoch} siteKey={siteKey} />
               </div>
             </form>

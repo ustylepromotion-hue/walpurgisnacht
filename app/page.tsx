@@ -39,37 +39,10 @@ const modeCards: {
   label: string;
   title: string;
   mode: ChatMode;
-  note?: string;
 }[] = [
-  { icon: BookOpen, label: '世界観・設定', title: 'ノーマルモード', mode: 'normal' },
-  { icon: WandSparkles, label: '演出・モチーフ', title: 'クソガキモード', mode: 'kusogaki' },
-  {
-    icon: MessageCircle,
-    label: '感想から考察',
-    title: '悪魔モード',
-    mode: 'akuma',
-    note: '編集予定',
-  },
-];
-const prompts = [
-  {
-    icon: BookOpen,
-    label: '世界観・設定',
-    title: '円環の理と、魔女のつながり。',
-    question: '円環の理と魔女の関係を整理したい',
-  },
-  {
-    icon: WandSparkles,
-    label: '演出・モチーフ',
-    title: 'あの演出には、どんな意味が？',
-    question: '印象に残った演出やモチーフを一緒に読み解きたい',
-  },
-  {
-    icon: MessageCircle,
-    label: '感想から考察',
-    title: 'うまく言えない感想も、ここから。',
-    question: '作品を観て感じたことから、考察を広げたい',
-  },
+  { icon: BookOpen, label: 'モード選択', title: 'ノーマルモード', mode: 'normal' },
+  { icon: WandSparkles, label: 'モード選択', title: 'クソガキモード', mode: 'kusogaki' },
+  { icon: MessageCircle, label: 'モード選択', title: '悪魔モード', mode: 'akuma' },
 ];
 export default function Home() {
   return (
@@ -293,10 +266,6 @@ function Workspace() {
       if (!current.signal.aborted) setPending(false);
     }
   }
-  function choose(question: string) {
-    setDraft(question);
-    input.current?.focus();
-  }
   function chooseMode(nextMode: ChatMode) {
     setMode(nextMode);
     setError('');
@@ -328,21 +297,6 @@ function Workspace() {
               <Icon size={18} />
               {label}
               {mode === id ? <Check size={15} /> : <span />}
-            </button>
-          ))}
-          <div className="nav-label theme-label">考察テーマ</div>
-          {prompts.map(({ icon: Icon, label, question }) => (
-            <button
-              className="nav-item"
-              key={label}
-              onClick={() => {
-                choose(question);
-                setOpenMobile(false);
-              }}
-            >
-              <Icon size={18} />
-              {label}
-              <ArrowUpRight size={14} />
             </button>
           ))}
           <div className="nav-label history-label">このセッションの考察</div>
@@ -412,10 +366,10 @@ function Workspace() {
                 あなたの視点で自由にお話しください。
               </p>
               <div className="prompt-grid">
-                {modeCards.map(({ icon: Icon, label, title, mode: cardMode, note }) => (
+                {modeCards.map(({ icon: Icon, label, title, mode: cardMode }) => (
                   <button
                     className={`prompt-card ${mode === cardMode ? 'selected' : ''}`}
-                    key={label}
+                    key={title}
                     aria-pressed={mode === cardMode}
                     onClick={() => chooseMode(cardMode)}
                   >
@@ -423,10 +377,7 @@ function Workspace() {
                       <Icon size={18} />
                       {label}
                     </span>
-                    <span className="prompt-title">
-                      {title}
-                      {note ? <em className="pending-note">（{note}）</em> : null}
-                    </span>
+                    <span className="prompt-title">{title}</span>
                     {mode === cardMode ? (
                       <Check size={17} className="card-arrow" />
                     ) : (

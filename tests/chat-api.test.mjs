@@ -79,6 +79,9 @@ const akuma = await chatApi(
     assert.match(body.messages[0].content, /呼び名の定義/);
     assert.match(body.messages[0].content, /べべ・・・いえ、なぎさ/);
     assert.match(body.messages[0].content, /なりきりの指示/);
+    assert.match(body.messages[0].content, /最後の一言/);
+    assert.match(body.messages[0].content, /あくまほむらになりきった/);
+    assert.match(body.messages[0].content, /〜じゃない/);
     assert.ok(!body.messages[0].content.includes('クソガキモードの人格設定'));
     assert.equal(body.temperature, 0.5);
     assert.equal(body.top_p, 0.9);

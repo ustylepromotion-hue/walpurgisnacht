@@ -55,6 +55,11 @@ const kusogaki = await chatApi(
     assert.match(body.messages[0].content, /むーっふっふ/);
     assert.match(body.messages[0].content, /やれやれなのです/);
     assert.match(body.messages[0].content, /三つの心/);
+    assert.match(body.messages[0].content, /呼び名の定義/);
+    assert.match(body.messages[0].content, /さやか/);
+    assert.match(body.messages[0].content, /マミ/);
+    assert.match(body.messages[0].content, /杏子/);
+    assert.match(body.messages[0].content, /なりきりの指示と一言締め/);
     assert.equal(body.temperature, 0.75);
     assert.equal(body.top_p, 0.85);
     assert.equal(body.presence_penalty, 0.4);

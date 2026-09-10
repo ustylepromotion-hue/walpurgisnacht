@@ -232,14 +232,19 @@ function Workspace() {
     }
     if (window.matchMedia('(pointer: coarse)').matches) input.current?.blur();
     const id = active ?? crypto.randomUUID();
-    const messages: Message[] = [
+    // UI履歴(conversations)には過去のやり取りを残すが、
+    // API送信は常に今回の質問のみ(コンテキスト非継承)。
+    // これによりモード切替後は新しいモードの人格だけで回答し、
+    // 前モードの会話文脈が混入しない。
+    const history: Message[] = [
       ...(chat?.messages ?? []),
       { role: 'user', content: text },
     ];
+    const messages: Message[] = [{ role: 'user', content: text }];
     setConversations((list) =>
       active
-        ? list.map((c) => (c.id === id ? { ...c, messages } : c))
-        : [{ id, title: text, messages }, ...list],
+        ? list.map((c) => (c.id === id ? { ...c, messages: history } : c))
+        : [{ id, title: text, messages: history }, ...list],
     );
     setActive(id);
     setRequestChat(id);
@@ -264,7 +269,7 @@ function Workspace() {
       setTurnstileLoading(true);
       setTurnstileEpoch((e) => e + 1);
       if (!current.signal.aborted) {
-        setTyping({ id, index: messages.length, text: '' });
+        setTyping({ id, index: history.length, text: '' });
         setConversations((list) =>
           list.map((c) =>
             c.id === id ? { ...c, messages: [...c.messages, response] } : c,
@@ -272,7 +277,7 @@ function Workspace() {
         );
         await revealText(
           response.content,
-          (text) => setTyping({ id, index: messages.length, text }),
+          (text) => setTyping({ id, index: history.length, text }),
           current.signal,
         );
         if (!current.signal.aborted) setTyping(null);
@@ -569,7 +574,7 @@ function Workspace() {
               </div>
             )}
             <p className="demo-note">
-              現在はAIによる回答です。会話はこの画面を開いている間のみ保持されます。
+              現在はAIによる1問1答です。過去の会話内容は引き継がれず、毎回独立して回答します。履歴はこの画面を開いている間のみ表示されます。
             </p>
             <details className="legal-block">
               <summary>プライバシーポリシー / 免責事項</summary>

@@ -93,7 +93,6 @@ function Workspace() {
   const nearBottom = useRef(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState<number | null>(null);
-  const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileEpoch, setTurnstileEpoch] = useState(0);
   const [siteKey, setSiteKey] = useState('');
   const { setOpenMobile } = useSidebar();
@@ -192,6 +191,13 @@ function Workspace() {
   async function send() {
     const text = draft.trim();
     if (!text || pending) return;
+    // Turnstile はフォーム内の hidden input にトークンを書き込む。
+    const turnstileToken =
+      (
+        document.querySelector(
+          '.cf-turnstile input[name="cf-turnstile-response"]',
+        ) as HTMLInputElement | null
+      )?.value ?? '';
     if (!turnstileToken) {
       setError('人によるアクセス確認を完了してから送信してください。');
       return;
@@ -226,7 +232,6 @@ function Workspace() {
         usedToken,
       );
       // トークンは使い捨て。次の送信に備えてウィジェットを再マウントする。
-      setTurnstileToken('');
       setTurnstileEpoch((e) => e + 1);
       if (!current.signal.aborted) {
         setTyping({ id, index: messages.length, text: '' });
@@ -503,7 +508,7 @@ function Workspace() {
                   <button
                     className="send-button"
                     type="submit"
-                    disabled={!draft.trim() || pending || !turnstileToken}
+                    disabled={!draft.trim() || pending}
                     aria-label="送信"
                   >
                     <ArrowUp size={21} />
@@ -511,11 +516,7 @@ function Workspace() {
                 </div>
               </div>
               <div className="turnstile-row">
-                <Turnstile
-                  key={turnstileEpoch}
-                  siteKey={siteKey}
-                  onToken={(token) => setTurnstileToken(token)}
-                />
+                <Turnstile key={turnstileEpoch} siteKey={siteKey} />
               </div>
             </form>
             <p className="demo-note">

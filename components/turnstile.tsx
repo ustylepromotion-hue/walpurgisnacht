@@ -9,7 +9,7 @@ declare global {
         el: HTMLElement,
         opts: {
           sitekey: string;
-          callback: (token: string) => void;
+          callback?: (token: string) => void;
           'expired-callback'?: () => void;
           'error-callback'?: () => void;
         },
@@ -22,20 +22,14 @@ declare global {
 
 /**
  * Cloudflare Turnstile ウィジェット。
+ * 発行されたトークンはフォーム内の `[name=cf-turnstile-response]` に書き込まれるため、
+ * 送信時に親フォームから直接読み取る（コールバック非依存で確実）。
  * トークンは使い捨てのため、消費後は親コンポーネントから key を変更して
  * 再マウントさせる（新しいチャレンジが発行される）。
  */
-export default function Turnstile({
-  siteKey,
-  onToken,
-}: {
-  siteKey: string;
-  onToken: (token: string) => void;
-}) {
+export default function Turnstile({ siteKey }: { siteKey: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
-  const onTokenRef = useRef(onToken);
-  onTokenRef.current = onToken;
 
   useEffect(() => {
     if (!siteKey) return;
@@ -44,9 +38,6 @@ export default function Turnstile({
       if (!window.turnstile || !ref.current || cancelled) return;
       widgetId.current = window.turnstile.render(ref.current, {
         sitekey: siteKey,
-        callback: (token: string) => onTokenRef.current(token),
-        'expired-callback': () => onTokenRef.current(''),
-        'error-callback': () => onTokenRef.current(''),
       });
     };
     if (window.turnstile) {

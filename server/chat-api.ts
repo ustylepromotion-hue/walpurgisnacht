@@ -236,7 +236,14 @@ export async function chatApi(
             presence_penalty: 0.4,
             frequency_penalty: 0.3,
           }
-        : { temperature: 0.2 };
+        : mode === 'akuma'
+          ? {
+              temperature: 0.5,
+              top_p: 0.9,
+              presence_penalty: 0.4,
+              frequency_penalty: 0.25,
+            }
+          : { temperature: 0.2 };
     const response = await upstream(endpoint, {
       method: 'POST',
       headers: {

@@ -70,8 +70,15 @@ const akuma = await chatApi(
     if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
       return Response.json({ success: true });
     const body = JSON.parse(init.body);
+    assert.match(body.messages[0].content, /悪魔モードの人格設定/);
+    assert.match(body.messages[0].content, /一人称は「わたし」/);
+    assert.match(body.messages[0].content, /〜かしら/);
+    assert.match(body.messages[0].content, /まどかの話/);
     assert.ok(!body.messages[0].content.includes('クソガキモードの人格設定'));
-    assert.equal(body.temperature, 0.2);
+    assert.equal(body.temperature, 0.5);
+    assert.equal(body.top_p, 0.9);
+    assert.equal(body.presence_penalty, 0.4);
+    assert.equal(body.frequency_penalty, 0.25);
     return Response.json({ choices: [{ message: { content: '回答' }, finish_reason: 'stop' }] });
   },
 );
